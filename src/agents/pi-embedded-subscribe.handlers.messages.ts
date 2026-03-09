@@ -94,6 +94,16 @@ export function handleMessageUpdate(
   const evtType = typeof assistantRecord?.type === "string" ? assistantRecord.type : "";
 
   if (evtType === "thinking_start" || evtType === "thinking_delta" || evtType === "thinking_end") {
+    // Streaming tool dispatch barrier: <think> open tag means the model's
+    // reasoning may depend on previously dispatched tool results.
+    if (evtType === "thinking_start") {
+      const dispatcher = ctx.params.streamingToolDispatcher;
+      if (dispatcher) {
+        dispatcher.barrier().catch((err) => {
+          ctx.log.debug(`streaming dispatch barrier failed: ${String(err)}`);
+        });
+      }
+    }
     if (evtType === "thinking_start" || evtType === "thinking_delta") {
       ctx.state.reasoningStreamOpen = true;
     }
@@ -119,6 +129,20 @@ export function handleMessageUpdate(
         ctx.state.reasoningStreamOpen = true;
       }
       emitReasoningEnd(ctx);
+    }
+    return;
+  }
+
+  // Streaming tool dispatch: detect toolcall_end events and pre-dispatch eagerly.
+  if (evtType === "toolcall_end") {
+    const dispatcher = ctx.params.streamingToolDispatcher;
+    if (dispatcher) {
+      const toolCall = assistantRecord?.toolCall as
+        | { id?: string; name?: string; arguments?: Record<string, unknown> }
+        | undefined;
+      if (toolCall?.id && toolCall?.name) {
+        dispatcher.onToolCallStreamed(toolCall.id, toolCall.name, toolCall.arguments ?? {});
+      }
     }
     return;
   }
@@ -256,6 +280,14 @@ export function handleMessageEnd(
   const msg = evt.message;
   if (msg?.role !== "assistant") {
     return;
+  }
+
+  // Streaming tool dispatch: await all remaining pending dispatches at stream end.
+  const dispatcher = ctx.params.streamingToolDispatcher;
+  if (dispatcher) {
+    dispatcher.barrier().catch((err) => {
+      ctx.log.debug(`streaming dispatch barrier (message_end) failed: ${String(err)}`);
+    });
   }
 
   const assistantMessage = msg;

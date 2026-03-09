@@ -4,6 +4,7 @@ import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { HookRunner } from "../plugins/hooks.js";
 import type { BlockReplyChunking } from "./pi-embedded-block-chunker.js";
 import type { BlockReplyPayload } from "./pi-embedded-payloads.js";
+import type { StreamingToolDispatcher } from "./streaming-tool-dispatch.js";
 
 export type ToolResultFormat = "markdown" | "plain";
 
@@ -35,6 +36,8 @@ export type SubscribeEmbeddedPiSessionParams = {
   sessionId?: string;
   /** Agent identity for hook context — resolved from session config in attempt.ts. */
   agentId?: string;
+  /** Pre-dispatch tool calls eagerly during LLM streaming (opt-in). */
+  streamingToolDispatcher?: StreamingToolDispatcher;
 };
 
 export type { BlockReplyChunking } from "./pi-embedded-block-chunker.js";

@@ -84,6 +84,8 @@ import {
   applySkillEnvOverridesFromSnapshot,
   resolveSkillsPromptForRun,
 } from "../../skills.js";
+import type { StreamingToolDispatcher } from "../../streaming-tool-dispatch.js";
+import { createStreamingToolDispatcher } from "../../streaming-tool-dispatch.js";
 import { buildSystemPromptParams } from "../../system-prompt-params.js";
 import { buildSystemPromptReport } from "../../system-prompt-report.js";
 import { sanitizeToolCallIdsForCloudCodeAssist } from "../../tool-call-id.js";
@@ -1176,6 +1178,23 @@ export async function runEmbeddedAttempt(
 
       const allCustomTools = [...customTools, ...clientToolDefs];
 
+      // Streaming tool dispatch: eagerly fire tool calls during LLM streaming.
+      const streamingDispatchEnabled =
+        params.config?.agents?.defaults?.streamingToolDispatch === true;
+      let streamingDispatcher: StreamingToolDispatcher | undefined;
+      let wrappedBuiltInTools = builtInTools;
+      if (streamingDispatchEnabled) {
+        // Only built-in tools are pre-dispatchable (AgentTool); custom/client
+        // tool definitions have an incompatible execute signature and are left
+        // unwrapped — the SDK runs them normally after the stream ends.
+        streamingDispatcher = createStreamingToolDispatcher(
+          builtInTools,
+          runAbortController.signal,
+        );
+        wrappedBuiltInTools = builtInTools.map((t) => streamingDispatcher!.wrapTool(t));
+        log.debug(`streaming tool dispatch enabled for runId=${params.runId}`);
+      }
+
       ({ session } = await createAgentSession({
         cwd: resolvedWorkspace,
         agentDir,
@@ -1183,7 +1202,7 @@ export async function runEmbeddedAttempt(
         modelRegistry: params.modelRegistry,
         model: params.model,
         thinkingLevel: mapThinkingLevel(params.thinkLevel),
-        tools: builtInTools,
+        tools: wrappedBuiltInTools,
         customTools: allCustomTools,
         sessionManager,
         settingsManager,
@@ -1531,6 +1550,7 @@ export async function runEmbeddedAttempt(
         sessionKey: sandboxSessionKey,
         sessionId: params.sessionId,
         agentId: sessionAgentId,
+        streamingToolDispatcher: streamingDispatcher,
       });
 
       const {
@@ -2001,6 +2021,14 @@ export async function runEmbeddedAttempt(
           log.error(
             `CRITICAL: unsubscribe failed, possible resource leak: runId=${params.runId} ${String(err)}`,
           );
+        }
+        if (streamingDispatcher) {
+          if (streamingDispatcher.dispatched > 0) {
+            log.debug(
+              `streaming dispatch stats: dispatched=${streamingDispatcher.dispatched} cacheHits=${streamingDispatcher.cacheHits}`,
+            );
+          }
+          streamingDispatcher.dispose();
         }
         clearActiveEmbeddedRun(params.sessionId, queueHandle, params.sessionKey);
         params.abortSignal?.removeEventListener?.("abort", onAbort);
