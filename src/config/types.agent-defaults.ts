@@ -284,6 +284,13 @@ export type AgentDefaultsConfig = {
   };
   /** Optional sandbox settings for non-main sessions. */
   sandbox?: AgentSandboxConfig;
+  /**
+   * Enable streaming tool call dispatch: eagerly fire tool calls as they
+   * arrive in the LLM stream rather than waiting for the full response.
+   * Uses `<think>` blocks as natural barriers for result synchronization.
+   * Default: false.
+   */
+  streamingToolDispatch?: boolean;
 };
 
 export type AgentCompactionMode = "default" | "safeguard";
