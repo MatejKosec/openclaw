@@ -1,3 +1,7 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # Repository Guidelines
 
 - Repo: https://github.com/openclaw/openclaw
@@ -23,6 +27,27 @@
   - Core channel code: `src/telegram`, `src/discord`, `src/slack`, `src/signal`, `src/imessage`, `src/web` (WhatsApp web), `src/channels`, `src/routing`
   - Extensions (channel plugins): `extensions/*` (e.g. `extensions/msteams`, `extensions/matrix`, `extensions/zalo`, `extensions/zalouser`, `extensions/voice-call`)
 - When adding channels/extensions/apps/docs, update `.github/labeler.yml` and create matching GitHub labels (use existing channel/extension label colors).
+- Native apps: `apps/macos` (SwiftUI), `apps/ios` (SwiftUI + XcodeGen), `apps/android` (Kotlin), `apps/shared/OpenClawKit` (shared Swift).
+
+## Architecture Overview
+
+OpenClaw is a multi-channel AI gateway. Inbound messages from any channel are routed to an AI agent (Claude via Pi Agent), and replies are delivered back to the originating channel.
+
+**Core data flow:** Channel → Gateway → Routing → Agent → Tool execution → Channel reply
+
+**Gateway** (`src/gateway/`): WebSocket RPC server. `server.impl.ts` defines `startGatewayServer()`. RPC methods live in `src/gateway/server-methods/` (60+ handlers for agent, chat, config, channels, sessions, etc.). The method registry is in `server-methods-list.ts`.
+
+**Channels** (`src/channels/`, `src/telegram/`, `src/discord/`, etc.): Each channel implements adapter interfaces defined in `src/channels/plugins/types.ts` — `ChannelMessagingAdapter`, `ChannelPairingAdapter`, `ChannelOutboundAdapter`, etc. Channel metadata registry in `src/channels/registry.ts`. Core channels (Telegram, Discord, Slack, Signal, iMessage, WhatsApp Web) live in `src/`; extension channels (40+) in `extensions/`.
+
+**Routing** (`src/routing/`): `resolve-route.ts` maps inbound messages to agents. Resolution priority: peer binding → parent peer → guild+role → guild → team → account → channel → default agent. Returns a `ResolvedAgentRoute` with agentId, sessionKey, channel, and accountId.
+
+**Agent pipeline** (`src/agents/`): `pi-embedded-runner.ts` orchestrates agent execution — builds system prompt, loads session history, calls Claude API via Pi Agent, handles model fallback. `pi-embedded-subscribe.ts` handles streaming — parses reasoning tags, tool calls, and final answers. Tool definitions in `pi-tools.*.ts` files.
+
+**Plugin system** (`src/plugins/`, `src/plugin-sdk/`): `discovery.ts` scans bundled + user extensions. Plugins register tools, channels, memory backends, and context engines. The SDK (`src/plugin-sdk/`) is the public API for extensions; exported via `openclaw/plugin-sdk` paths.
+
+**CLI** (`src/cli/`): Built with Commander.js. `src/cli/program/build-program.ts` registers commands from `command-registry.ts`. Command implementations in `src/commands/`. Entry point: `src/entry.ts`.
+
+**Config** (`src/config/`): Unified config at `~/.openclaw/config.json` (JSON5). `OpenClawConfig` type in `src/config/types.ts` covers agents, bindings, channels, models, gateway, plugins, and hooks. Sessions stored separately in `~/.openclaw/sessions/`.
 
 ## Docs Linking (Mintlify)
 
@@ -73,6 +98,8 @@
 - Format check: `pnpm format` (oxfmt --check)
 - Format fix: `pnpm format:fix` (oxfmt --write)
 - Tests: `pnpm test` (vitest); coverage: `pnpm test:coverage`
+- Run a single test file: `pnpm exec vitest run src/path/to/file.test.ts`
+- Run tests matching a name: `pnpm exec vitest run -t "test name pattern"`
 
 ## Coding Style & Naming Conventions
 
