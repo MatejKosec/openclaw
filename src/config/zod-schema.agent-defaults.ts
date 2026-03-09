@@ -190,6 +190,7 @@ export const AgentDefaultsSchema = z
       .strict()
       .optional(),
     sandbox: AgentSandboxSchema,
+    streamingToolDispatch: z.boolean().optional(),
   })
   .strict()
   .optional();
